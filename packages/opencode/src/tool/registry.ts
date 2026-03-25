@@ -27,6 +27,7 @@ import { Log } from "@/util/log"
 import { LspTool } from "./lsp"
 import { Truncate } from "./truncate"
 import { ApplyPatchTool } from "./apply_patch"
+import { HandsTool } from "./hands"
 import { Glob } from "../util/glob"
 import { pathToFileURL } from "url"
 import { Effect, Layer, ServiceMap } from "effect"
@@ -117,6 +118,7 @@ export namespace ToolRegistry {
           InvalidTool,
           ...(question ? [QuestionTool] : []),
           BashTool,
+          HandsTool,
           ReadTool,
           GlobTool,
           GrepTool,

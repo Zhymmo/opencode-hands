@@ -1,0 +1,35 @@
+Use hands as an agent-controlled holding space for session-scoped artifacts.
+
+Use this tool when the agent needs to retain intermediate content separately from the conversation and filesystem, then inspect, reuse, write, or discard it later. Hands is for agent workflow, not direct user benefit.
+
+- `pickup` stores text or a file in hands under a unique name
+- `show` lists stored items or inspects one item
+- `place` writes a stored item to a file, or discards it if no target is given
+
+- Use `hands` for intermediate state, temporary snapshots, reusable generated content, or content that should be held before deciding whether to materialize it
+- Use `read`, `write`, or `edit` for normal file operations when no holding step is needed
+
+Use cases:
+- Generate a snippet once, then reuse it across later steps
+- Keep the original version of a file before rewriting it, so later changes can still reference it
+- Hold content now and decide later whether or where to write it
+- Copy the same content to multiple destinations without rereading or regenerating it
+
+Parameters:
+- `action`: `pickup`, `show`, or `place`
+- `name`: unique item name within the current session; required for `pickup` and `place`, optional for `show`
+- `content`: text content to store with `pickup`; use either `content` or `file`
+- `file`: file path to store with `pickup`; text files are stored as text, images and binary files are stored as encoded content; directories are not supported
+- `to`: target file path for `place`; if omitted, the item is discarded
+- `keep`: when used with `place` and `to`, keep the item in hands after writing it
+
+Examples:
+- `hands action="pickup" name="original config" file="./config.yaml"`
+- `hands action="pickup" name="step 2 output" content="..."`
+- `hands action="show"`
+- `hands action="show" name="step 2 output"`
+- `hands action="place" name="step 2 output" to="./result.txt" keep=true`
+- `hands action="place" name="original config"`
+
+Limits:
+- Maximum size is 10MB per item and 100MB total across all items
