@@ -21,6 +21,7 @@ describe("Hands", () => {
           type: "text",
           encoding: "utf8",
           content: "Hello, World!",
+          description: "greeting",
           size: 13,
         }
 
@@ -32,12 +33,13 @@ describe("Hands", () => {
         expect(retrieved?.type).toBe("text")
         expect(retrieved?.encoding).toBe("utf8")
         expect(retrieved?.content).toBe("Hello, World!")
+        expect(retrieved?.description).toBe("greeting")
         expect(retrieved?.size).toBe(13)
       },
     })
   })
 
-  test("put with base64 encoding for binary content", async () => {
+  test("put and get file content with utf8 encoding", async () => {
     await Instance.provide({
       directory: root,
       fn: async () => {
@@ -45,18 +47,23 @@ describe("Hands", () => {
 
         const item: HandsItem = {
           sessionID: session.id,
-          name: "binary",
-          type: "image",
-          encoding: "base64",
-          content: "iVBORw0KGgo=",
-          size: 8,
+          name: "file",
+          type: "file",
+          encoding: "utf8",
+          content: "foo: bar\n",
+          description: "",
+          source: "config.yaml",
+          size: 9,
         }
 
         await Hands.put(item)
 
-        const retrieved = await Hands.get(session.id, "binary")
-        expect(retrieved?.encoding).toBe("base64")
-        expect(retrieved?.content).toBe("iVBORw0KGgo=")
+        const retrieved = await Hands.get(session.id, "file")
+        expect(retrieved?.type).toBe("file")
+        expect(retrieved?.encoding).toBe("utf8")
+        expect(retrieved?.content).toBe("foo: bar\n")
+        expect(retrieved?.description).toBe("")
+        expect(retrieved?.source).toBe("config.yaml")
       },
     })
   })
@@ -73,6 +80,7 @@ describe("Hands", () => {
           type: "text",
           encoding: "utf8",
           content: "First",
+          description: "",
           size: 5,
         })
 
@@ -83,6 +91,7 @@ describe("Hands", () => {
             type: "text",
             encoding: "utf8",
             content: "Second",
+            description: "",
             size: 6,
           }),
         ).rejects.toThrow()
@@ -113,6 +122,7 @@ describe("Hands", () => {
           type: "text",
           encoding: "utf8",
           content: "Remove me",
+          description: "",
           size: 9,
         })
 
@@ -137,22 +147,27 @@ describe("Hands", () => {
           type: "text",
           encoding: "utf8",
           content: "Content 1",
+          description: "first",
           size: 9,
         })
 
         await Hands.put({
           sessionID: session.id,
           name: "item2",
-          type: "image",
-          encoding: "base64",
-          content: "aGVsbG8=",
-          size: 6,
+          type: "file",
+          encoding: "utf8",
+          content: "a: b\n",
+          description: "",
+          source: "item2.yaml",
+          size: 5,
         })
 
         const items = await Hands.list(session.id)
         expect(items.length).toBe(2)
         expect(items[0].name).toBe("item1")
+        expect(items[0].description).toBe("first")
         expect(items[1].name).toBe("item2")
+        expect(items[1].description).toBe("")
       },
     })
   })
@@ -169,6 +184,7 @@ describe("Hands", () => {
           type: "text",
           encoding: "utf8",
           content: "12345",
+          description: "",
           size: 5,
         })
 
@@ -178,6 +194,7 @@ describe("Hands", () => {
           type: "text",
           encoding: "utf8",
           content: "1234567890",
+          description: "",
           size: 10,
         })
 
@@ -200,6 +217,7 @@ describe("Hands", () => {
           type: "text",
           encoding: "utf8",
           content: "Session 1",
+          description: "",
           size: 9,
         })
 
@@ -209,6 +227,7 @@ describe("Hands", () => {
           type: "text",
           encoding: "utf8",
           content: "Session 2",
+          description: "",
           size: 9,
         })
 

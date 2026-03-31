@@ -2,7 +2,7 @@ Use hands as an agent-controlled holding space for session-scoped artifacts.
 
 Use this tool when the agent needs to retain intermediate content separately from the conversation and filesystem, then inspect, reuse, write, or discard it later. Hands is for agent workflow, not direct user benefit.
 
-- `pickup` stores text or a file in hands under a unique name
+- `pickup` stores text or a readable text file in hands under a unique name
 - `show` lists stored items or inspects one item
 - `place` writes a stored item to a file, or discards it if no target is given
 
@@ -19,13 +19,14 @@ Parameters:
 - `action`: `pickup`, `show`, or `place`
 - `name`: unique item name within the current session; required for `pickup` and `place`, optional for `show`
 - `content`: text content to store with `pickup`; use either `content` or `file`
-- `file`: file path to store with `pickup`; text files are stored as text, images and binary files are stored as encoded content; directories are not supported
+- `description`: optional agent-authored summary stored with `pickup`; defaults to an empty string and is shown by `show`
+- `file`: file path to store with `pickup`; only files that the `read` tool can read as text are supported; images, PDFs, and binary files are not supported; directories are not supported
 - `to`: target file path for `place`; if omitted, the item is discarded
 - `keep`: when used with `place` and `to`, keep the item in hands after writing it
 
 Examples:
 - `hands action="pickup" name="original config" file="./config.yaml"`
-- `hands action="pickup" name="step 2 output" content="..."`
+- `hands action="pickup" name="step 2 output" content="..." description="intermediate result for later reuse"`
 - `hands action="show"`
 - `hands action="show" name="step 2 output"`
 - `hands action="place" name="step 2 output" to="./result.txt" keep=true`

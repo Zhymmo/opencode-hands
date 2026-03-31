@@ -1,4 +1,5 @@
 import z from "zod"
+import * as fs from "fs/promises"
 import * as path from "path"
 import { createTwoFilesPatch } from "diff"
 import { Tool } from "./tool"
@@ -22,23 +23,77 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
 }
 
-function isBinaryContent(bytes: Uint8Array): boolean {
-  const sample = bytes.slice(0, 512)
-  for (let i = 0; i < sample.length; i++) {
-    const byte = sample[i]
-    if (byte === 0) return true
-    if (byte < 32 && byte !== 9 && byte !== 10 && byte !== 13) {
-      return true
-    }
+function formatContent(item: HandsItem): string {
+  const description = item.description.replaceAll('"', '\\"')
+  if (item.encoding === "base64") {
+    return `<content type="${item.type}" encoding="${item.encoding}" source="${item.source ?? ""}" description="${description}">\n[binary content, base64 encoded, ${formatSize(item.size)}]\n</content>`
   }
-  return false
+  return `<content type="${item.type}" encoding="${item.encoding}" source="${item.source ?? ""}" description="${description}">\n${item.content}\n</content>`
 }
 
-function formatContent(item: HandsItem): string {
-  if (item.encoding === "base64") {
-    return `<content type="${item.type}" encoding="${item.encoding}" source="${item.source ?? ""}">\n[${item.type === "image" ? "image" : "binary"} content, base64 encoded, ${formatSize(item.size)}]\n</content>`
+async function classifyFile(filepath: string, size: number) {
+  const mime = Filesystem.mimeType(filepath)
+  const image = mime.startsWith("image/") && mime !== "image/svg+xml" && mime !== "image/vnd.fastbidsheet"
+  if (image) return { kind: "image" as const }
+  if (mime === "application/pdf") return { kind: "pdf" as const }
+  if (await isBinaryFile(filepath, size)) return { kind: "binary" as const }
+  return { kind: "text" as const }
+}
+
+async function isBinaryFile(filepath: string, size: number): Promise<boolean> {
+  const ext = path.extname(filepath).toLowerCase()
+  switch (ext) {
+    case ".zip":
+    case ".tar":
+    case ".gz":
+    case ".exe":
+    case ".dll":
+    case ".so":
+    case ".class":
+    case ".jar":
+    case ".war":
+    case ".7z":
+    case ".doc":
+    case ".docx":
+    case ".xls":
+    case ".xlsx":
+    case ".ppt":
+    case ".pptx":
+    case ".odt":
+    case ".ods":
+    case ".odp":
+    case ".bin":
+    case ".dat":
+    case ".obj":
+    case ".o":
+    case ".a":
+    case ".lib":
+    case ".wasm":
+    case ".pyc":
+    case ".pyo":
+      return true
+    default:
+      break
   }
-  return `<content type="${item.type}" encoding="${item.encoding}" source="${item.source ?? ""}">\n${item.content}\n</content>`
+
+  if (size === 0) return false
+
+  const fh = await fs.open(filepath, "r")
+  try {
+    const sampleSize = Math.min(4096, size)
+    const bytes = Buffer.alloc(sampleSize)
+    const result = await fh.read(bytes, 0, sampleSize, 0)
+    if (result.bytesRead === 0) return false
+
+    let count = 0
+    for (let i = 0; i < result.bytesRead; i++) {
+      if (bytes[i] === 0) return true
+      if (bytes[i] < 9 || (bytes[i] > 13 && bytes[i] < 32)) count++
+    }
+    return count / result.bytesRead > 0.3
+  } finally {
+    await fh.close()
+  }
 }
 
 const ActionSchema = z.enum(["pickup", "place", "show"])
@@ -49,6 +104,7 @@ type PickupMetadata = {
   type: HandsItem["type"]
   encoding: HandsItem["encoding"]
   size: number
+  description: string
   source?: string
 }
 
@@ -58,6 +114,7 @@ type PlaceMetadata = {
   type: HandsItem["type"]
   encoding: HandsItem["encoding"]
   size: number
+  description: string
   source?: string
   kept: boolean
 }
@@ -119,6 +176,7 @@ export const HandsTool = Tool.define<z.ZodObject<{
   action: typeof ActionSchema
   name: z.ZodOptional<z.ZodString>
   content: z.ZodOptional<z.ZodString>
+  description: z.ZodOptional<z.ZodString>
   file: z.ZodOptional<z.ZodString>
   to: z.ZodOptional<z.ZodString>
   keep: z.ZodOptional<z.ZodBoolean>
@@ -128,7 +186,8 @@ export const HandsTool = Tool.define<z.ZodObject<{
     action: ActionSchema.describe("pickup: grab content, place: drop content, show: list all"),
     name: z.string().describe("Unique identifier (required for pickup/place, optional for show to view specific item)").optional(),
     content: z.string().describe("Text content (for pickup, use either content or file)").optional(),
-    file: z.string().describe("File path (for pickup, auto-detects type)").optional(),
+    description: z.string().describe("Optional agent-authored summary for the stored item (pickup only, defaults to empty)").optional(),
+    file: z.string().describe("File path (for pickup, only text-readable files are supported)").optional(),
     to: z.string().describe("Target file path (for place, if omitted the item is discarded)").optional(),
     keep: z.boolean().describe("Keep in hand after writing to file (default false, only used with 'to')").optional(),
   }),
@@ -145,7 +204,7 @@ export const HandsTool = Tool.define<z.ZodObject<{
 })
 
 async function executePickup(
-  params: { name?: string; content?: string; file?: string },
+  params: { name?: string; content?: string; description?: string; file?: string },
   ctx: Tool.Context<HandsMetadata>,
 ) {
   if (!params.name) {
@@ -158,9 +217,10 @@ async function executePickup(
     throw new Error("Cannot use both content and file parameters, choose one")
   }
 
-  let type: "text" | "image" | "file" = "text"
+  let type: "text" | "file" = "text"
   let encoding: "utf8" | "base64" = "utf8"
   let content: string
+  const description = params.description ?? ""
   let source: string | undefined
   let size: number
 
@@ -185,32 +245,16 @@ async function executePickup(
     }
 
     source = path.relative(Instance.worktree, filepath)
+    const file = await classifyFile(filepath, fileSize)
+    if (file.kind === "image") throw new Error(`Cannot pickup image file: ${filepath}`)
+    if (file.kind === "pdf") throw new Error(`Cannot pickup PDF file: ${filepath}`)
+    if (file.kind === "binary") throw new Error(`Cannot pickup binary file: ${filepath}`)
 
-    const bytes = await Filesystem.readBytes(filepath)
     await FileTime.read(ctx.sessionID, filepath)
-
-    const mime = Filesystem.mimeType(filepath)
-    const isImage = mime.startsWith("image/") && mime !== "image/svg+xml"
-
-    if (isImage) {
-      type = "image"
-      encoding = "base64"
-      content = Buffer.from(bytes).toString("base64")
-      size = bytes.length
-    } else {
-      const isBinary = isBinaryContent(bytes)
-      if (isBinary) {
-        type = "file"
-        encoding = "base64"
-        content = Buffer.from(bytes).toString("base64")
-        size = bytes.length
-      } else {
-        type = "file"
-        encoding = "utf8"
-        content = await Filesystem.readText(filepath)
-        size = Buffer.byteLength(content, "utf-8")
-      }
-    }
+    type = "file"
+    encoding = "utf8"
+    content = await Filesystem.readText(filepath)
+    size = Buffer.byteLength(content, "utf-8")
   } else {
     content = params.content!
     encoding = "utf8"
@@ -234,6 +278,7 @@ async function executePickup(
     type,
     encoding,
     content,
+    description,
     source,
     size,
   })
@@ -247,6 +292,7 @@ async function executePickup(
       type,
       encoding,
       size,
+      description,
       source,
     } satisfies PickupMetadata,
   }
@@ -297,6 +343,7 @@ async function executePlace(
       type: item.type,
       encoding: item.encoding,
       size: item.size,
+      description: item.description,
       source: item.source,
       kept: params.to ? (params.keep ?? false) : false,
     } satisfies PlaceMetadata,
@@ -336,7 +383,7 @@ async function executeShow(params: { name?: string }, ctx: { sessionID: string }
 
   const lines = items.map((item, i) => {
     const source = item.source ?? "(direct content)"
-    return `[${i + 1}] ${item.name} (${item.type}, ${item.encoding}, ${source}, ${formatSize(item.size)})`
+    return `[${i + 1}] ${item.name} (${item.type}, ${item.encoding}, ${source}, ${formatSize(item.size)}, description="${item.description.replaceAll('"', '\\"')}")`
   })
 
   return {

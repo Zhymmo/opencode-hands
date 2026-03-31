@@ -10,9 +10,10 @@ export const HandsTable = sqliteTable(
       .notNull()
       .references(() => SessionTable.id, { onDelete: "cascade" }),
     name: text().notNull(),
-    type: text().notNull(), // "text" | "image" | "file"
+    type: text().notNull(), // "text" | "file"
     encoding: text().notNull().default("utf8"), // "utf8" | "base64"
     content: text().notNull(),
+    description: text().notNull().default(""),
     source: text(),
     size: integer().notNull(),
     ...Timestamps,

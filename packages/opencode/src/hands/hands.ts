@@ -5,9 +5,10 @@ import { HandsTable } from "./hands.sql.ts"
 export type HandsItem = {
   sessionID: string
   name: string
-  type: "text" | "image" | "file"
+  type: "text" | "file"
   encoding: "utf8" | "base64"
   content: string
+  description: string
   source?: string
   size: number
 }
@@ -26,6 +27,7 @@ export namespace Hands {
         type: item.type,
         encoding: item.encoding,
         content: item.content,
+        description: item.description,
         source: item.source ?? null,
         size: item.size,
         time_created: Date.now(),
@@ -47,9 +49,10 @@ export namespace Hands {
     return {
       sessionID: row.session_id,
       name: row.name,
-      type: row.type as "text" | "image" | "file",
+      type: row.type as "text" | "file",
       encoding: row.encoding as "utf8" | "base64",
       content: row.content,
+      description: row.description,
       source: row.source ?? undefined,
       size: row.size,
     }
@@ -70,6 +73,7 @@ export namespace Hands {
           name: HandsTable.name,
           type: HandsTable.type,
           encoding: HandsTable.encoding,
+          description: HandsTable.description,
           source: HandsTable.source,
           size: HandsTable.size,
         })
@@ -80,8 +84,9 @@ export namespace Hands {
     return result.map((row) => ({
       sessionID: row.sessionID,
       name: row.name,
-      type: row.type as "text" | "image" | "file",
+      type: row.type as "text" | "file",
       encoding: row.encoding as "utf8" | "base64",
+      description: row.description,
       source: row.source ?? undefined,
       size: row.size,
     }))

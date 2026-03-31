@@ -41,6 +41,7 @@ describe("tool.hands", () => {
             action: "pickup",
             name: "note",
             content: "hello world",
+            description: "summary note",
           },
           ctx(session.id),
         )
@@ -53,6 +54,7 @@ describe("tool.hands", () => {
           type: "text",
           encoding: "utf8",
           size: 11,
+          description: "summary note",
           source: undefined,
         })
         expect(await Hands.get(session.id, "note")).toEqual({
@@ -61,6 +63,7 @@ describe("tool.hands", () => {
           type: "text",
           encoding: "utf8",
           content: "hello world",
+          description: "summary note",
           source: undefined,
           size: 11,
         })
@@ -105,9 +108,95 @@ describe("tool.hands", () => {
           type: "file",
           encoding: "utf8",
           content: "from file",
+          description: "",
           source: "docs/note.txt",
           size: 9,
         })
+      },
+    })
+  })
+
+  test("pickup rejects image files", async () => {
+    await using tmp = await tmpdir({
+      git: true,
+      init: async (dir) => {
+        const png = Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==",
+          "base64",
+        )
+        await Bun.write(path.join(dir, "image.png"), png)
+      },
+    })
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const session = await Session.create({})
+        const tool = await HandsTool.init()
+
+        await expect(
+          tool.execute(
+            {
+              action: "pickup",
+              name: "image",
+              file: "image.png",
+            },
+            ctx(session.id),
+          ),
+        ).rejects.toThrow("Cannot pickup image file:")
+      },
+    })
+  })
+
+  test("pickup rejects pdf files", async () => {
+    await using tmp = await tmpdir({
+      git: true,
+      init: async (dir) => {
+        await Bun.write(path.join(dir, "doc.pdf"), "%PDF-1.4\n1 0 obj\n<<>>\nendobj\n")
+      },
+    })
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const session = await Session.create({})
+        const tool = await HandsTool.init()
+
+        await expect(
+          tool.execute(
+            {
+              action: "pickup",
+              name: "pdf",
+              file: "doc.pdf",
+            },
+            ctx(session.id),
+          ),
+        ).rejects.toThrow("Cannot pickup PDF file:")
+      },
+    })
+  })
+
+  test("pickup rejects binary files that read cannot read", async () => {
+    await using tmp = await tmpdir({
+      git: true,
+      init: async (dir) => {
+        await Bun.write(path.join(dir, "module.wasm"), "not really wasm")
+      },
+    })
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const session = await Session.create({})
+        const tool = await HandsTool.init()
+
+        await expect(
+          tool.execute(
+            {
+              action: "pickup",
+              name: "bin",
+              file: "module.wasm",
+            },
+            ctx(session.id),
+          ),
+        ).rejects.toThrow("Cannot pickup binary file:")
       },
     })
   })
@@ -205,6 +294,7 @@ describe("tool.hands", () => {
           type: "text",
           encoding: "utf8",
           content: "x",
+          description: "",
           size: MAX_TOTAL_SIZE,
         })
 
@@ -237,6 +327,7 @@ describe("tool.hands", () => {
             action: "pickup",
             name: "note",
             content: "placed text",
+            description: "",
           },
           testCtx,
         )
@@ -278,6 +369,7 @@ describe("tool.hands", () => {
             action: "pickup",
             name: "note",
             content: "kept text",
+            description: "",
           },
           testCtx,
         )
@@ -303,6 +395,7 @@ describe("tool.hands", () => {
         expect(await Hands.get(session.id, "note")).toMatchObject({
           name: "note",
           content: "kept text",
+          description: "",
         })
       },
     })
@@ -328,6 +421,7 @@ describe("tool.hands", () => {
             action: "pickup",
             name: "text-note",
             content: "hello",
+            description: "inline text",
           },
           testCtx,
         )
@@ -344,9 +438,27 @@ describe("tool.hands", () => {
         if (out.metadata.action !== "show") throw new Error("expected show metadata")
 
         expect(out.title).toBe("2 items")
-        expect(out.output).toContain("text-note (text, utf8, (direct content), 5 bytes)")
-        expect(out.output).toContain("file-note (file, utf8, docs/note.txt, 9 bytes)")
+        expect(out.output).toContain('text-note (text, utf8, (direct content), 5 bytes, description="inline text")')
+        expect(out.output).toContain('file-note (file, utf8, docs/note.txt, 9 bytes, description="")')
         expect(out.metadata.items).toHaveLength(2)
+        expect(out.metadata.items).toContainEqual({
+          sessionID: session.id,
+          name: "text-note",
+          type: "text",
+          encoding: "utf8",
+          description: "inline text",
+          source: undefined,
+          size: 5,
+        })
+        expect(out.metadata.items).toContainEqual({
+          sessionID: session.id,
+          name: "file-note",
+          type: "file",
+          encoding: "utf8",
+          description: "",
+          source: "docs/note.txt",
+          size: 9,
+        })
       },
     })
   })
@@ -365,6 +477,7 @@ describe("tool.hands", () => {
             action: "pickup",
             name: "note",
             content: "hello world",
+            description: "saved for reuse",
           },
           testCtx,
         )
@@ -379,7 +492,7 @@ describe("tool.hands", () => {
         if (out.metadata.action !== "show") throw new Error("expected show metadata")
 
         expect(out.title).toBe("note")
-        expect(out.output).toContain('<content type="text" encoding="utf8" source="">')
+        expect(out.output).toContain('<content type="text" encoding="utf8" source="" description="saved for reuse">')
         expect(out.output).toContain("hello world")
         expect(out.metadata.items).toEqual([
           {
@@ -387,6 +500,7 @@ describe("tool.hands", () => {
             name: "note",
             type: "text",
             encoding: "utf8",
+            description: "saved for reuse",
             source: undefined,
             size: 11,
           },
